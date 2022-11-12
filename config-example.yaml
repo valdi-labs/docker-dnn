@@ -1,0 +1,12 @@
+---
+AWS:
+  REGION: "aws-region"
+  S3:
+    S3_BUCKET: "s3-bucket-name"
+  CLOUDWATCH:
+    LOG_GROUP: "cw-log-group-name"
+  AUTH:
+    AWS_ACCESS_KEY_ID: "access-key-id-string"
+    AWS_SECRET_ACCESS_KEY: "secret-access-key-string"
+MODEL:
+  NAME: "model-name"

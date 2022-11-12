@@ -1,0 +1,7 @@
+config.yaml
+venv
+mnist_model
+mnist-model
+*.tar.gz
+.DS_Store
+.idea
