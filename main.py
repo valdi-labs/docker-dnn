@@ -74,7 +74,7 @@ def train_model(ds_train, ds_test):
     )
     model.fit(
         ds_train,
-        epochs=25,
+        epochs=100,
         validation_data=ds_test,
         verbose=2,
         callbacks=[CustomCallback()]

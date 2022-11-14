@@ -1,6 +1,5 @@
 venv
 *model
-.idea
-config.yaml
 *.tar.gz
 .DS_Store
+.idea
