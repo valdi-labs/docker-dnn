@@ -6,6 +6,7 @@ import tarfile
 import time
 import logging
 from cloudwatch import cloudwatch
+from util import read_mnist
 
 
 class CustomCallback(tf.keras.callbacks.Callback):
@@ -61,6 +62,23 @@ def load_data():
     return ds_train, ds_test, ds_info
 
 
+def load_data_from_s3(
+        boto_session, bucket_name, train_filename, test_filename, train_label_filename, test_label_filename):
+    s3 = boto_session.client('s3')
+
+    s3.download_file(bucket_name, train_filename, train_filename)
+    s3.download_file(bucket_name, train_label_filename, train_label_filename)
+    train_examples, train_labels = read_mnist(train_filename, train_label_filename)
+    ds_train = tf.data.Dataset.from_tensor_slices((train_examples, train_labels))
+
+    s3.download_file(bucket_name, test_filename, test_filename)
+    s3.download_file(bucket_name, test_label_filename, test_label_filename)
+    test_examples, test_labels = read_mnist(test_filename, test_label_filename)
+    ds_test = tf.data.Dataset.from_tensor_slices((test_examples, test_labels))
+
+    return ds_train, ds_test
+
+
 def train_model(ds_train, ds_test):
     model = tf.keras.models.Sequential([
         tf.keras.layers.Flatten(input_shape=(28, 28)),
@@ -74,7 +92,7 @@ def train_model(ds_train, ds_test):
     )
     model.fit(
         ds_train,
-        epochs=100,
+        epochs=25,
         validation_data=ds_test,
         verbose=2,
         callbacks=[CustomCallback()]
@@ -87,13 +105,8 @@ def bundle_directory(dir_name):
         tar.add(dir_name)
 
 
-def upload_to_s3(filename, bucket_name, access_key, secret_key):
-    session = boto3.Session(
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key
-    )
-
-    s3 = session.resource('s3')
+def upload_to_s3(boto_session, filename, bucket_name):
+    s3 = boto_session.resource('s3')
     with open(filename, 'rb') as f:
         s3.Bucket(bucket_name).put_object(Key=filename, Body=f)
 
@@ -110,29 +123,44 @@ if __name__ == "__main__":
     AWS_SECRET_ACCESS_KEY = config_data['AWS']['AUTH']['AWS_SECRET_ACCESS_KEY']
     MODEL_NAME = config_data['MODEL']['NAME']
     LOG_STREAM = str(int(time.time()))
+    TRAIN_DATA_FILENAME = config_data['DATA']['TRAIN']
+    TEST_DATA_FILENAME = config_data['DATA']['TEST']
+    TRAIN_LABEL_FILENAME = config_data['DATA']['TRAIN_LABELS']
+    TEST_LABEL_FILENAME = config_data['DATA']['TEST_LABELS']
+    CLOUDWATCH_LOGS = config_data['LOG_TO_CLOUDWATCH']
 
-    # Set up CloudWatch
-    handler = cloudwatch.CloudwatchHandler(
-        log_group=LOG_GROUP,
-        log_stream=LOG_STREAM,
-        region=REGION,
-        access_id=AWS_ACCESS_KEY_ID,
-        access_key=AWS_SECRET_ACCESS_KEY
+    # Create S3 Boto3 Session
+    session = boto3.Session(
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY
     )
 
     # Set up logging
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
+    if CLOUDWATCH_LOGS:
+        # Set up CloudWatch
+        handler = cloudwatch.CloudwatchHandler(
+            log_group=LOG_GROUP,
+            log_stream=LOG_STREAM,
+            region=REGION,
+            access_id=AWS_ACCESS_KEY_ID,
+            access_key=AWS_SECRET_ACCESS_KEY
+        )
+        logger.addHandler(handler)
 
     # Load the dataset
     logger.info('Loading dataset...')
-    ds_train, ds_test, ds_info = load_data()
+    # ds_train, ds_test, ds_info = load_data()
+    ds_train, ds_test = load_data_from_s3(session, S3_BUCKET, TRAIN_DATA_FILENAME, TEST_DATA_FILENAME,
+                                          TRAIN_LABEL_FILENAME, TEST_LABEL_FILENAME)
 
     # Build the training and testing pipelines
     logger.info('Building training and testing pipelines...')
-    ds_train = training_pipeline(ds_train, ds_info)
-    ds_test = evaluation_pipeline(ds_test)
+    # ds_train = training_pipeline(ds_train, ds_info)
+    # ds_test = evaluation_pipeline(ds_test)
+    ds_train = ds_train.shuffle(100).batch(64)
+    ds_test = ds_test.batch(64)
 
     # Train the model
     logger.info('Training model...')
@@ -145,4 +173,4 @@ if __name__ == "__main__":
 
     # Persist final model in S3
     logger.info('Uploading to data store...')
-    upload_to_s3(f'{MODEL_NAME}.tar.gz', S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+    upload_to_s3(session, f'{MODEL_NAME}.tar.gz', S3_BUCKET)
