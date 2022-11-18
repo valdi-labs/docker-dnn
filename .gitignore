@@ -1,4 +1,5 @@
 venv
+data
 *model
 .idea
 config.yaml

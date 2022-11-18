@@ -3,3 +3,4 @@ venv
 *.tar.gz
 .DS_Store
 .idea
+data

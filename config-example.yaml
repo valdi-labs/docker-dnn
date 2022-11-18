@@ -15,4 +15,6 @@ DATA:
   TEST: "test-data-filename"
   TRAIN_LABELS: "training-data-labels"
   TEST_LABELS: "test-data-labels"
-LOG_TO_CLOUDWATCH: true
+OPTIONS:
+  LOG_TO_CLOUDWATCH: true
+  SAVE_TO_S3: false
