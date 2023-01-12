@@ -10,3 +10,11 @@ AWS:
     AWS_SECRET_ACCESS_KEY: "secret-access-key-string"
 MODEL:
   NAME: "model-name"
+DATA:
+  TRAIN: "training-data-filename"
+  TEST: "test-data-filename"
+  TRAIN_LABELS: "training-data-labels"
+  TEST_LABELS: "test-data-labels"
+OPTIONS:
+  LOG_TO_CLOUDWATCH: true
+  SAVE_TO_S3: false
