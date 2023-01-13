@@ -11,9 +11,9 @@ from util import read_mnist
 
 
 class CustomCallback(tf.keras.callbacks.Callback):
-    def __init__(self, logger, s3_session, s3_bucket):
+    def __init__(self, logger, s3_client, s3_bucket):
         self.logger = logger
-        self.s3_session = s3_session
+        self.s3_client = s3_client
         self.s3_bucket = s3_bucket
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -27,9 +27,8 @@ class CustomCallback(tf.keras.callbacks.Callback):
         with tarfile.open(f'data/{intermediate_model_filename}.tar.gz', 'w:gz') as tar:
             tar.add('data/' + intermediate_model_filename,
                     arcname=os.path.basename('data/' + intermediate_model_filename))
-        s3 = self.s3_session.client('s3')
-        s3.upload_file(f'data/{intermediate_model_filename}.tar.gz', self.s3_bucket,
-                       f'{intermediate_model_filename}.tar.gz')
+        self.s3_client.upload_file(f'data/{intermediate_model_filename}.tar.gz', self.s3_bucket,
+                                   f'{intermediate_model_filename}.tar.gz')
 
     def on_train_end(self, logs=None):
         self.logger.info(f'Training complete! Final model accuracy: {logs["val_sparse_categorical_accuracy"]}')
@@ -75,9 +74,7 @@ def load_data():
 
 
 def load_data_from_s3(
-        boto_session, bucket_name, data_filename, label_filename):
-    s3 = boto_session.client('s3')
-
+        s3, bucket_name, data_filename, label_filename):
     s3.download_file(bucket_name, data_filename, 'data/' + data_filename)
     s3.download_file(bucket_name, label_filename, 'data/' + label_filename)
     train_examples, train_labels = read_mnist('data/' + data_filename, 'data/' + label_filename)
@@ -86,7 +83,7 @@ def load_data_from_s3(
     return ds
 
 
-def train_model(ds_train, ds_test, logger, s3_session, s3_bucket):
+def train_model(ds_train, ds_test, logger, s3_client, s3_bucket):
     model = tf.keras.models.Sequential([
         tf.keras.layers.Flatten(input_shape=(28, 28)),
         tf.keras.layers.Dense(128, activation='relu'),
@@ -112,8 +109,7 @@ def bundle_directory(dir_name):
         tar.add(dir_name)
 
 
-def upload_to_s3(boto_session, filename, bucket_name):
-    s3 = boto_session.client('s3')
+def upload_to_s3(s3, filename, bucket_name):
     s3.upload_file('data/' + filename, bucket_name, filename)
 
 
@@ -122,6 +118,7 @@ if __name__ == "__main__":
     CONFIG_FILE = 'config.yaml'
     with open(CONFIG_FILE, 'r') as f:
         config_data = yaml.safe_load(f)
+    ENDPOINT_URL = config_data['AWS']['ENDPOINT']
     REGION = config_data['AWS']['REGION']
     S3_BUCKET = config_data['AWS']['S3']['S3_BUCKET']
     LOG_GROUP = config_data['AWS']['CLOUDWATCH']['LOG_GROUP']
@@ -136,10 +133,13 @@ if __name__ == "__main__":
     CLOUDWATCH_LOGS = config_data['OPTIONS']['LOG_TO_CLOUDWATCH']
     S3_UPLOAD = config_data['OPTIONS']['SAVE_TO_S3']
 
-    # Create S3 Boto3 Session
-    session = boto3.Session(
+    # Create S3 Boto3 Session & Client
+    session = boto3.session.Session()
+    s3_client = session.client(
+        service_name="s3",
         aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        endpoint_url=ENDPOINT_URL
     )
 
     # Set up logging
@@ -160,8 +160,8 @@ if __name__ == "__main__":
     # Load the dataset
     logger.info('Loading dataset...')
     # ds_train, ds_test, ds_info = load_data()
-    ds_train = load_data_from_s3(session, S3_BUCKET, TRAIN_DATA_FILENAME, TRAIN_LABEL_FILENAME)
-    ds_test = load_data_from_s3(session, S3_BUCKET, TEST_DATA_FILENAME, TEST_LABEL_FILENAME)
+    ds_train = load_data_from_s3(s3_client, S3_BUCKET, TRAIN_DATA_FILENAME, TRAIN_LABEL_FILENAME)
+    ds_test = load_data_from_s3(s3_client, S3_BUCKET, TEST_DATA_FILENAME, TEST_LABEL_FILENAME)
 
     # Build the training and testing pipelines
     logger.info('Building training and testing pipelines...')
@@ -172,7 +172,7 @@ if __name__ == "__main__":
 
     # Train the model
     logger.info('Training model...')
-    model = train_model(ds_train, ds_test, logger, session, S3_BUCKET)
+    model = train_model(ds_train, ds_test, logger, s3_client, S3_BUCKET)
     model.save('data/' + MODEL_NAME)
 
     # Bundle model
@@ -182,4 +182,4 @@ if __name__ == "__main__":
     if S3_UPLOAD:
         # Persist final model in S3
         logger.info('Uploading to data store...')
-        upload_to_s3(session, f'{MODEL_NAME}.tar.gz', S3_BUCKET)
+        upload_to_s3(s3_client, f'{MODEL_NAME}.tar.gz', S3_BUCKET)

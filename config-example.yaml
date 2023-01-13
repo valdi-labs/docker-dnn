@@ -1,5 +1,6 @@
 ---
 AWS:
+  ENDPOINT: "endpoint-url"
   REGION: "aws-region"
   S3:
     S3_BUCKET: "s3-bucket-name"
