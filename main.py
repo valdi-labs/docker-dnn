@@ -99,7 +99,7 @@ def train_model(ds_train, ds_test, logger, s3_client, s3_bucket):
         epochs=25,
         validation_data=ds_test,
         verbose=2,
-        callbacks=[CustomCallback(logger=logger, s3_session=s3_session, s3_bucket=s3_bucket)]
+        callbacks=[CustomCallback(logger=logger, s3_client=s3_client, s3_bucket=s3_bucket)]
     )
     return model
 
